@@ -32,6 +32,18 @@ export class StellarService {
   }
 
   /**
+   * Fetches the recommended transaction fee from Horizon fee_stats.
+   * Uses p50 (median) of recent fees to avoid overpaying while ensuring inclusion.
+   * @returns Recommended fee in stroops as a string (required by TransactionBuilder)
+   */
+  async getRecommendedFee(): Promise<string> {
+    const feeStats = await this.server.feeStats();
+    // p50 = median fee paid in recent ledgers — safe and cost-efficient
+    const fee = parseInt(feeStats.fee_charged.p50, 10);
+    return Math.max(fee, 100).toString(); // floor at Stellar's base fee (100 stroops)
+  }
+
+  /**
    * Submit a price update to the Stellar network with a unique memo ID
    * @param currency - The currency code (e.g., "NGN", "KES")
    * @param price - The current price/rate
@@ -41,8 +53,9 @@ export class StellarService {
     try {
       const sourceAccount = await this.server.loadAccount(this.keypair.publicKey());
       
+      const fee = await this.getRecommendedFee();
       const transaction = new TransactionBuilder(sourceAccount, {
-        fee: "100", // Standard fee in stroops
+        fee,
         networkPassphrase: this.network === "PUBLIC" ? Networks.PUBLIC : Networks.TESTNET,
       })
         .addOperation(
