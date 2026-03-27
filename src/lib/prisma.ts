@@ -12,11 +12,13 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 // Use a fallback URL if DATABASE_URL is missing to prevent initialization errors in tests
-const prismaOptions = process.env.DATABASE_URL 
-  ? {} 
-  : { datasources: { db: { url: "postgresql://undefined" } } };
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient(prismaOptions);
+export const prisma =
+  globalForPrisma.prisma ??
+  (process.env.DATABASE_URL
+    ? new PrismaClient()
+    : new PrismaClient({
+        datasources: { db: { url: "postgresql://undefined" } },
+      }));
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
