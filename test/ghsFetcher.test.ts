@@ -27,7 +27,7 @@ async function run() {
     const directRate = await fetcher.fetchRate();
     assert.equal(directRate.currency, 'GHS');
     assert.equal(directRate.rate, 2.45);
-    assert.equal(directRate.source, 'Weighted average of 1 sources');
+    assert.equal(directRate.source, 'Weighted average of 1 sources (outliers filtered)');
 
     let exchangeRateRequested = false;
 
@@ -63,7 +63,7 @@ async function run() {
     assert.equal(exchangeRateRequested, true);
     assert.equal(fallbackRate.currency, 'GHS');
     assert.equal(fallbackRate.rate, 2);
-    assert.equal(fallbackRate.source, 'Weighted average of 2 sources');
+    assert.equal(fallbackRate.source, 'Weighted average of 2 sources (outliers filtered)');
   } finally {
     axios.get = originalGet;
   }

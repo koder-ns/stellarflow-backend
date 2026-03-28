@@ -1,10 +1,6 @@
 import axios from "axios";
-import {
-  MarketRateFetcher,
-  MarketRate,
-  SourceTrustLevel,
-  calculateWeightedAverage,
-} from "./types";
+import { MarketRateFetcher, MarketRate, calculateMedian, filterOutliers, SourceTrustLevel, calculateWeightedAverage } from "./types";
+import { withRetry } from "../../utils/retryUtil.js";
 
 type CoinGeckoPriceResponse = {
   stellar?: {
@@ -93,16 +89,19 @@ export class NGNRateFetcher implements MarketRateFetcher {
     const headers = this.vtpassHeaders();
     if (!headers) return null;
 
-    const response = await axios.get<VtpassVariationsResponse>(
-      `${this.vtpassBase()}/service-variations`,
-      {
-        params: { serviceID: serviceId },
-        timeout: 15000,
-        headers: {
-          ...headers,
-          "User-Agent": "StellarFlow-Oracle/1.0",
+    const response = await withRetry(
+      () => axios.get<VtpassVariationsResponse>(
+        `${this.vtpassBase()}/service-variations`,
+        {
+          params: { serviceID: serviceId },
+          timeout: 15000,
+          headers: {
+            ...headers,
+            "User-Agent": "StellarFlow-Oracle/1.0",
+          },
         },
-      },
+      ),
+      { maxRetries: 3, retryDelay: 1000 }
     );
 
     if (response.data.response_description !== "000") {
@@ -135,14 +134,17 @@ export class NGNRateFetcher implements MarketRateFetcher {
     try {
       const vt = await this.fetchNgnPerUsdFromVtpass();
       if (vt) {
-        const coinGeckoResponse = await axios.get<CoinGeckoPriceResponse>(
-          this.coinGeckoUrl,
-          {
-            timeout: 10000,
-            headers: {
-              "User-Agent": "StellarFlow-Oracle/1.0",
+        const coinGeckoResponse = await withRetry(
+          () => axios.get<CoinGeckoPriceResponse>(
+            this.coinGeckoUrl,
+            {
+              timeout: 10000,
+              headers: {
+                "User-Agent": "StellarFlow-Oracle/1.0",
+              },
             },
-          },
+          ),
+          { maxRetries: 3, retryDelay: 1000 }
         );
 
         const usd = coinGeckoResponse.data.stellar?.usd;
@@ -168,14 +170,17 @@ export class NGNRateFetcher implements MarketRateFetcher {
 
     // Strategy 2: CoinGecko direct XLM/NGN
     try {
-      const coinGeckoResponse = await axios.get<CoinGeckoPriceResponse>(
-        this.coinGeckoUrl,
-        {
-          timeout: 10000,
-          headers: {
-            "User-Agent": "StellarFlow-Oracle/1.0",
+      const coinGeckoResponse = await withRetry(
+        () => axios.get<CoinGeckoPriceResponse>(
+          this.coinGeckoUrl,
+          {
+            timeout: 10000,
+            headers: {
+              "User-Agent": "StellarFlow-Oracle/1.0",
+            },
           },
-        },
+        ),
+        { maxRetries: 3, retryDelay: 1000 }
       );
 
       const stellarPrice = coinGeckoResponse.data.stellar;
@@ -201,14 +206,17 @@ export class NGNRateFetcher implements MarketRateFetcher {
 
     // Strategy 3: CoinGecko XLM/USD × USD/NGN (open.er-api)
     try {
-      const coinGeckoResponse = await axios.get<CoinGeckoPriceResponse>(
-        this.coinGeckoUrl,
-        {
-          timeout: 10000,
-          headers: {
-            "User-Agent": "StellarFlow-Oracle/1.0",
+      const coinGeckoResponse = await withRetry(
+        () => axios.get<CoinGeckoPriceResponse>(
+          this.coinGeckoUrl,
+          {
+            timeout: 10000,
+            headers: {
+              "User-Agent": "StellarFlow-Oracle/1.0",
+            },
           },
-        },
+        ),
+        { maxRetries: 3, retryDelay: 1000 }
       );
 
       const stellarPrice = coinGeckoResponse.data.stellar;
@@ -217,14 +225,17 @@ export class NGNRateFetcher implements MarketRateFetcher {
         typeof stellarPrice.usd === "number" &&
         stellarPrice.usd > 0
       ) {
-        const fxResponse = await axios.get<ExchangeRateApiResponse>(
-          this.usdToNgnUrl,
-          {
-            timeout: 10000,
-            headers: {
-              "User-Agent": "StellarFlow-Oracle/1.0",
+        const fxResponse = await withRetry(
+          () => axios.get<ExchangeRateApiResponse>(
+            this.usdToNgnUrl,
+            {
+              timeout: 10000,
+              headers: {
+                "User-Agent": "StellarFlow-Oracle/1.0",
+              },
             },
-          },
+          ),
+          { maxRetries: 3, retryDelay: 1000 }
         );
 
         const usdToNgn = fxResponse.data.rates?.NGN;
@@ -254,19 +265,24 @@ export class NGNRateFetcher implements MarketRateFetcher {
     }
 
     if (prices.length > 0) {
-      const weightedRate = calculateWeightedAverage(
-        prices.map((p) => ({ value: p.rate, trustLevel: p.trustLevel })),
-      );
+      let rateValues = prices.map((p) => p.rate).filter(p => p > 0);
+      rateValues = filterOutliers(rateValues);
       const mostRecentTimestamp = prices.reduce(
         (latest, p) => (p.timestamp > latest ? p.timestamp : latest),
         prices[0]?.timestamp ?? new Date(),
       );
 
+      const weightedInput = prices.map((p) => ({
+        value: p.rate,
+        trustLevel: p.trustLevel as SourceTrustLevel,
+      }));
+      const weightedRate = calculateWeightedAverage(weightedInput);
+
       return {
         currency: "NGN",
         rate: weightedRate,
         timestamp: mostRecentTimestamp,
-        source: `Weighted average of ${prices.length} sources`,
+        source: `Weighted average of ${prices.length} sources (outliers filtered)`,
       };
     }
 

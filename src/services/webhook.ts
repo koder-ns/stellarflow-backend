@@ -1,39 +1,49 @@
 import axios from "axios";
+import { withRetry } from "../utils/retryUtil.js";
 
-type WebhookPayload =
-  | {
-      embeds: Array<{
-        title: string;
-        color: number;
-        fields: Array<{
-          name: string;
-          value: string;
-          inline?: boolean;
-        }>;
-      }>;
-    }
-  | {
-      blocks: Array<
-        | {
-            type: "header";
-            text: {
-              type: "plain_text";
-              text: string;
-            };
-          }
-        | {
-            type: "section";
-            fields?: Array<{
-              type: "mrkdwn";
-              text: string;
-            }>;
-            text?: {
-              type: "mrkdwn";
-              text: string;
-            };
-          }
-      >;
-    };
+type MarkdownText = {
+  type: "mrkdwn";
+  text: string;
+};
+
+type PlainText = {
+  type: "plain_text";
+  text: string;
+};
+
+type DiscordEmbedField = {
+  name: string;
+  value: string;
+  inline?: boolean;
+};
+
+type DiscordPayload = {
+  embeds: Array<{
+    title: string;
+    color: number;
+    fields: DiscordEmbedField[];
+  }>;
+};
+
+type SlackPayload = {
+  blocks: Array<
+    | {
+        type: "header";
+        text: PlainText;
+      }
+    | {
+        type: "section";
+        fields?: MarkdownText[];
+        text?: MarkdownText;
+      }
+    | {
+        type: "context";
+        elements: MarkdownText[];
+      }
+  >;
+};
+
+type WebhookPayload = DiscordPayload | SlackPayload;
 
 type ErrorDetails = {
   errorType: string;
@@ -42,6 +52,17 @@ type ErrorDetails = {
   service: string;
   pricePair: string;
   timestamp: Date;
+};
+
+type ReviewDetails = {
+  reviewId: number;
+  currency: string;
+  rate: number;
+  previousRate: number;
+  changePercent: number;
+  source: string;
+  timestamp: Date;
+  reason: string;
 };
 
 export class WebhookService {
@@ -59,19 +80,51 @@ export class WebhookService {
       return;
     }
 
-    const message = this.formatMessage(errorDetails);
+    const message = this.formatErrorMessage(errorDetails);
+    await this.postMessage(message);
+  }
+
+  async sendManualReviewNotification(
+    reviewDetails: ReviewDetails,
+  ): Promise<void> {
+    if (!this.webhookUrl) {
+      return;
+    }
+
+    const message = this.formatReviewMessage(reviewDetails);
+    await this.postMessage(message);
+  }
+
+  private async postMessage(message: WebhookPayload): Promise<void> {
+    if (!this.webhookUrl) {
+      return;
+    }
+
+    const webhookUrl = this.webhookUrl;
 
     try {
-      await axios.post(this.webhookUrl, message, {
-        headers: { "Content-Type": "application/json" },
-        timeout: 5000,
-      });
+      await withRetry(
+        () =>
+          axios.post(webhookUrl, message, {
+            headers: { "Content-Type": "application/json" },
+            timeout: 5000,
+          }),
+        {
+          maxRetries: 3,
+          retryDelay: 1000,
+          onRetry: (attempt, error, delay) => {
+            console.debug(
+              `Webhook notification retry attempt ${attempt}/3 after ${delay}ms. Error: ${error.message}`,
+            );
+          },
+        },
+      );
     } catch (error) {
-      console.error("Failed to send webhook notification:", error);
+      console.error("Failed to send webhook notification after retries:", error);
     }
   }
 
-  private formatMessage(errorDetails: ErrorDetails): WebhookPayload {
+  private formatErrorMessage(errorDetails: ErrorDetails): WebhookPayload {
     const { errorMessage, attempts, service, pricePair, timestamp } =
       errorDetails;
 
@@ -121,6 +174,90 @@ export class WebhookService {
             type: "mrkdwn",
             text: `*Error:*\n\`\`\`${errorMessage.substring(0, 500)}\`\`\``,
           },
+        },
+      ],
+    };
+  }
+
+  private formatReviewMessage(reviewDetails: ReviewDetails): WebhookPayload {
+    const {
+      reviewId,
+      currency,
+      rate,
+      previousRate,
+      changePercent,
+      source,
+      timestamp,
+      reason,
+    } = reviewDetails;
+
+    if (this.platform === "discord") {
+      return {
+        embeds: [
+          {
+            title: "Manual Price Review Required",
+            color: 0xffa500,
+            fields: [
+              { name: "Review ID", value: reviewId.toString(), inline: true },
+              { name: "Currency", value: currency, inline: true },
+              { name: "Source", value: source, inline: true },
+              { name: "Current Rate", value: rate.toString(), inline: true },
+              {
+                name: "Previous Safe Rate",
+                value: previousRate.toString(),
+                inline: true,
+              },
+              {
+                name: "Change",
+                value: `${changePercent.toFixed(2)}%`,
+                inline: true,
+              },
+              { name: "Reason", value: reason.substring(0, 500) },
+              { name: "Time", value: timestamp.toISOString() },
+            ],
+          },
+        ],
+      };
+    }
+
+    return {
+      blocks: [
+        {
+          type: "header",
+          text: { type: "plain_text", text: "Manual Price Review Required" },
+        },
+        {
+          type: "section",
+          fields: [
+            { type: "mrkdwn", text: `*Review ID:*\n${reviewId}` },
+            { type: "mrkdwn", text: `*Currency:*\n${currency}` },
+            { type: "mrkdwn", text: `*Source:*\n${source}` },
+            { type: "mrkdwn", text: `*Current Rate:*\n${rate}` },
+            {
+              type: "mrkdwn",
+              text: `*Previous Safe Rate:*\n${previousRate}`,
+            },
+            {
+              type: "mrkdwn",
+              text: `*Change:*\n${changePercent.toFixed(2)}%`,
+            },
+          ],
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Reason:*\n${reason}`,
+          },
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `Detected at ${timestamp.toISOString()}`,
+            },
+          ],
         },
       ],
     };
