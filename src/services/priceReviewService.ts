@@ -189,18 +189,18 @@ export class PriceReviewService {
         rate,
         source,
         fetched_at,
-        renormalizedRate.rate},
-        ${normalizedRate.source},
-        ${normalizedRiew_reason,
+        review_status,
+        contract_status,
+        reason,
         baseline_rate,
         baseline_timestamp,
         change_percent
       )
       VALUES (
         ${currency},
-        ${rate.rate},
-        ${rate.source},
-        ${rate.timestamp},
+        ${normalizedRate.rate},
+        ${normalizedRate.source},
+        ${normalizedRate.timestamp},
         ${reviewStatus},
         ${contractStatus},
         ${reason ?? null},
@@ -216,20 +216,15 @@ export class PriceReviewService {
       throw new Error(`Failed to create price review record for ${currency}`);
     }
 
-    if (normalizedRate.rate,
-        previousRate: comparisonRate,
-        changePercent,
-        source: normalizedRate.source,
-        timestamp: normalizedR !== undefined
-    ) {
+    if (reason !== undefined) {
       await webhookService.sendManualReviewNotification({
         reviewId: inserted.id,
         currency,
-        rate: rate.rate,
+        rate: normalizedRate.rate,
         previousRate: comparisonRate,
         changePercent,
-        source: rate.source,
-        timestamp: rate.timestamp,
+        source: normalizedRate.source,
+        timestamp: normalizedRate.timestamp,
         reason,
       });
     }

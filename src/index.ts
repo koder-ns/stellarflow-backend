@@ -3,6 +3,7 @@ import { createServer } from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import morgan from "morgan";
+import helmet from "helmet";
 import { Horizon } from "@stellar/stellar-sdk";
 import swaggerUi from "swagger-ui-express";
 import marketRatesRouter from "./routes/marketRates";
@@ -86,6 +87,37 @@ app.use(
       );
     },
     credentials: true,
+  }),
+);
+// Security headers with Helmet - placed early before routes
+// Configured for API backend with minimal CSP to avoid breaking Swagger UI or frontend integration
+app.use(
+  helmet({
+    // Content Security Policy - minimal config for API backend
+    // Allows Swagger UI to function while providing basic XSS protection
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // 'unsafe-inline' needed for Swagger UI
+        styleSrc: ["'self'", "'unsafe-inline'"], // 'unsafe-inline' needed for Swagger UI inline styles
+        imgSrc: ["'self'", "data:", "https:"], // Allow data: for Swagger UI icons, https: for external images
+        fontSrc: ["'self'", "https:"], // Allow fonts from https (Swagger UI uses cdnjs)
+        connectSrc: ["'self'", "https:"], // Allow API calls to any https endpoint
+        frameAncestors: ["'none'"], // Prevent clickjacking
+      },
+    },
+    // X-Content-Type-Options: nosniff - prevents MIME type sniffing
+    noSniff: true,
+    // X-Frame-Options: DENY - prevents clickjacking (also covered by CSP frameAncestors)
+    frameguard: { action: "deny" },
+    // Referrer-Policy: strict-origin-when-cross-origin - sends referrer only to same-origin
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    // X-XSS-Protection is deprecated and not recommended (modern browsers use CSP instead)
+    xssFilter: false,
+    // Hide X-Powered-By header to reduce fingerprinting
+    hidePoweredBy: true,
+    // Strict-Transport-Security for HTTPS enforcement (only if behind HTTPS proxy)
+    hsts: { maxAge: 31536000, includeSubDomains: false, preload: false },
   }),
 );
 app.use(express.json());
