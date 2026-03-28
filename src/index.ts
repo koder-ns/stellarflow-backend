@@ -11,6 +11,7 @@ import statsRouter from "./routes/stats";
 import intelligenceRouter from "./routes/intelligence";
 import priceUpdatesRouter from "./routes/priceUpdates";
 import assetsRouter from "./routes/assets";
+import statusRouter from "./routes/status";
 import prisma from "./lib/prisma";
 import { initSocket } from "./lib/socket";
 import { SorobanEventListener } from "./services/sorobanEventListener";
@@ -114,6 +115,7 @@ app.use("/api/stats", statsRouter);
 app.use("/api/intelligence", intelligenceRouter);
 app.use("/api/price-updates", priceUpdatesRouter);
 app.use("/api/assets", assetsRouter);
+app.use("/api/status", statusRouter);
 
 // Health check endpoint
 /**
