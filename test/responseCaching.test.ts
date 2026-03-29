@@ -1,5 +1,5 @@
 import { MarketRateService } from "../src/services/marketRate";
-import { AggregatedFetcherResponse, MarketRate } from "../src/services/marketRate/types";
+import { MarketRate } from "../src/services/marketRate";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -7,91 +7,100 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-class TestMarketRateService extends MarketRateService {
-  public latestPricesCalls = 0;
+async function run(): Promise<void> {
+  const service = Object.create(MarketRateService.prototype) as any;
+  service.databaseCalls = 0;
+  service.redisData = new Map<string, { value: string; expiresAt: number }>();
+  service.cache = new Map<string, unknown>();
+  service.LATEST_PRICES_REDIS_KEY = "market-rates:latest:v1";
+  service.LATEST_PRICES_REDIS_TTL_SECONDS = 5;
+  service.getLatestPricesCacheClient = () => ({
+    get: async (key: string): Promise<string | null> => {
+      const entry = service.redisData.get(key);
+      if (!entry || entry.expiresAt <= Date.now()) {
+        service.redisData.delete(key);
+        return null;
+      }
 
-  override async getAllRates(): Promise<
-    Array<{ success: boolean; data?: MarketRate; error?: string }>
-  > {
-    this.latestPricesCalls += 1;
-
+      return entry.value;
+    },
+    setEx: async (
+      key: string,
+      ttlSeconds: number,
+      value: string,
+    ): Promise<void> => {
+      service.redisData.set(key, {
+        value,
+        expiresAt: Date.now() + ttlSeconds * 1000,
+      });
+    },
+    del: async (key: string): Promise<void> => {
+      service.redisData.delete(key);
+    },
+  });
+  service.fetchLatestPricesFromDatabase = async (): Promise<MarketRate[]> => {
+    service.databaseCalls += 1;
     return [
       {
-        success: true,
-        data: {
-          currency: "KES",
-          rate: 150,
-          timestamp: new Date("2026-03-27T12:00:00.000Z"),
-          source: "test",
-        },
+        currency: "KES",
+        rate: 150,
+        timestamp: new Date("2026-03-27T12:00:00.000Z"),
+        source: "test",
       },
       {
-        success: true,
-        data: {
-          currency: "GHS",
-          rate: 15,
-          timestamp: new Date("2026-03-27T12:00:00.000Z"),
-          source: "test",
-        },
+        currency: "GHS",
+        rate: 15,
+        timestamp: new Date("2026-03-27T12:00:00.000Z"),
+        source: "test",
       },
     ];
-  }
-}
-
-async function run(): Promise<void> {
-  const service = Object.assign(
-    Object.create(TestMarketRateService.prototype) as TestMarketRateService & {
-      cache: Map<string, unknown>;
-      latestPricesCache: { response: AggregatedFetcherResponse; expiry: Date } | null;
-      LATEST_PRICES_CACHE_DURATION_MS: number;
-    },
-    {
-      latestPricesCalls: 0,
-      cache: new Map<string, unknown>(),
-      latestPricesCache: null,
-      LATEST_PRICES_CACHE_DURATION_MS: 10_000,
-    },
-  );
+  };
 
   const firstResponse = await service.getLatestPrices();
   const secondResponse = await service.getLatestPrices();
 
   assert(firstResponse.success, "first latest-prices response should succeed");
-  assert(secondResponse.success, "second latest-prices response should succeed");
   assert(
-    service.latestPricesCalls === 1,
-    `expected cached latest prices to reuse the first response, got ${service.latestPricesCalls} fetches`,
+    secondResponse.success,
+    "second latest-prices response should succeed",
   );
   assert(
-    firstResponse === secondResponse,
-    "expected cached latest prices to return the same response object within the TTL",
+    service.databaseCalls === 1,
+    `expected Redis cache hit to avoid a second database query, got ${service.databaseCalls} queries`,
+  );
+  assert(
+    firstResponse !== secondResponse,
+    "expected Redis cache hit to return an equivalent payload, not the same object reference",
+  );
+  assert(
+    firstResponse.data?.[0]?.timestamp instanceof Date,
+    "expected first response timestamps to be Date objects",
+  );
+  assert(
+    secondResponse.data?.[0]?.timestamp instanceof Date,
+    "expected Redis response timestamps to be Date objects after hydration",
   );
 
-  (
-    service as unknown as {
-      latestPricesCache: { response: AggregatedFetcherResponse; expiry: Date } | null;
-    }
-  ).latestPricesCache = {
-    response: secondResponse,
-    expiry: new Date(Date.now() - 1000),
-  };
+  await new Promise((resolve) => setTimeout(resolve, 5100));
 
   const thirdResponse = await service.getLatestPrices();
 
   assert(thirdResponse.success, "third latest-prices response should succeed");
   assert(
-    service.latestPricesCalls === 2,
-    `expected an expired cache entry to trigger a refresh, got ${service.latestPricesCalls} fetches`,
+    service.databaseCalls === 2,
+    `expected TTL expiration to trigger a refresh, got ${service.databaseCalls} queries`,
   );
 
   service.clearCache();
+  const fourthResponse = await service.getLatestPrices();
+
   assert(
-    (
-      service as unknown as {
-        latestPricesCache: { response: AggregatedFetcherResponse; expiry: Date } | null;
-      }
-    ).latestPricesCache === null,
-    "expected clearCache to remove the latest-prices cache entry",
+    fourthResponse.success,
+    "fourth latest-prices response should succeed after manual cache clear",
+  );
+  assert(
+    service.databaseCalls === 3,
+    `expected clearCache to force a fresh query, got ${service.databaseCalls} queries`,
   );
 
   console.log("responseCaching.test.ts passed");
