@@ -16,6 +16,7 @@
     "test": "tsx test/marketRates.test.ts",
     "check:gas-balance": "tsx scripts/check-gas-balance.ts",
     "download:ngn-rates": "tsx scripts/download-ngn-rates.ts",
+    "db:backup": "bash scripts/pg_backup.sh",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
