@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { MarketRateFetcher, MarketRate, RateSource } from './types';
 import { validatePrice } from './validation';
+import { OUTGOING_HTTP_TIMEOUT_MS } from '../../utils/httpTimeout.js';
 
 /**
  * Binance Ticker Response Interface
@@ -170,7 +171,7 @@ const BINANCE_P2P_URL =
 /**
  * Default timeout for API requests (ms)
  */
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = OUTGOING_HTTP_TIMEOUT_MS;
 
 /**
  * Approximate KES/USD rate for calculation fallback
@@ -505,7 +506,7 @@ export class KESRateFetcher implements MarketRateFetcher {
     try {
       const response = await withRetry(
         () => axios.get(cbkSource.url, {
-          timeout: 10000,
+          timeout: OUTGOING_HTTP_TIMEOUT_MS,
           headers: {
             "User-Agent": "StellarFlow-Oracle/1.0",
             Accept: "application/json",
@@ -545,7 +546,7 @@ export class KESRateFetcher implements MarketRateFetcher {
     try {
       const response = await withRetry(
         () => axios.get(source.url, {
-          timeout: 10000,
+          timeout: OUTGOING_HTTP_TIMEOUT_MS,
           headers: {
             "User-Agent": "StellarFlow-Oracle/1.0",
             Accept: "application/json",

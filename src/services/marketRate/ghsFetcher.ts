@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { MarketRateFetcher, MarketRate } from './types';
 import { validatePrice } from './validation';
+import { OUTGOING_HTTP_TIMEOUT_MS } from '../../utils/httpTimeout.js';
 
 type CoinGeckoPriceResponse = {
   stellar?: {
@@ -42,7 +43,7 @@ export class GHSRateFetcher implements MarketRateFetcher {
         () => axios.get<CoinGeckoPriceResponse>(
           this.coinGeckoUrl,
           {
-            timeout: 10000,
+            timeout: OUTGOING_HTTP_TIMEOUT_MS,
             headers: {
               "User-Agent": "StellarFlow-Oracle/1.0",
             },
@@ -81,7 +82,7 @@ export class GHSRateFetcher implements MarketRateFetcher {
         () => axios.get<CoinGeckoPriceResponse>(
           this.coinGeckoUrl,
           {
-            timeout: 10000,
+            timeout: OUTGOING_HTTP_TIMEOUT_MS,
             headers: {
               "User-Agent": "StellarFlow-Oracle/1.0",
             },
@@ -100,7 +101,7 @@ export class GHSRateFetcher implements MarketRateFetcher {
           () => axios.get<ExchangeRateApiResponse>(
             this.usdToGhsUrl,
             {
-              timeout: 10000,
+              timeout: OUTGOING_HTTP_TIMEOUT_MS,
               headers: {
                 "User-Agent": "StellarFlow-Oracle/1.0",
               },
@@ -119,7 +120,7 @@ export class GHSRateFetcher implements MarketRateFetcher {
       const usdPrice = validatePrice(stellarPrice.usd);
 
       const exchangeRateResponse = await axios.get<ExchangeRateApiResponse>(this.usdToGhsUrl, {
-        timeout: 10000,
+        timeout: OUTGOING_HTTP_TIMEOUT_MS,
         headers: {
           "User-Agent": "StellarFlow-Oracle/1.0",
         },

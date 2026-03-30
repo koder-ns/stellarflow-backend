@@ -1,4 +1,5 @@
 import axios from "axios";
+import { OUTGOING_HTTP_TIMEOUT_MS } from "../../utils/httpTimeout.js";
 import { withRetry } from "../../utils/retryUtil.js";
 import { createFetcherLogger } from "../../utils/logger.js";
 
@@ -13,7 +14,10 @@ export class CoinGeckoFetcher {
    */
   static async fetchXlmUsdPrice(): Promise<number> {
     const response = await withRetry(
-      () => axios.get(CoinGeckoFetcher.API_URL),
+      () =>
+        axios.get(CoinGeckoFetcher.API_URL, {
+          timeout: OUTGOING_HTTP_TIMEOUT_MS,
+        }),
       {
         maxRetries: 3,
         retryDelay: 1000,

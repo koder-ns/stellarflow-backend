@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { Keypair } from "@stellar/stellar-sdk";
 import dotenv from "dotenv";
+import { createTimeoutSignal } from "../utils/httpTimeout.js";
 
 dotenv.config();
 
@@ -205,6 +206,7 @@ export class MultiSigService {
           Authorization: `Bearer ${process.env.MULTI_SIG_AUTH_TOKEN || ""}`,
         },
         body: JSON.stringify(payload),
+        signal: createTimeoutSignal(),
       });
 
       if (!response.ok) {
